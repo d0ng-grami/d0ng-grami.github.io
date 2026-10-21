@@ -1,4 +1,4 @@
-// src/pages/api/photos.js — upload / delete photos for a city+year
+// src/admin/api/photos.js — upload / delete photos for a city+year
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { readCities, writeCities, json, slug } from '../../lib/cities-store.js';

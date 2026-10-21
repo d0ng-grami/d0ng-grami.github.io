@@ -6,14 +6,28 @@ import { defineConfig, fontProviders } from 'astro/config';
 
 import tailwindcss from '@tailwindcss/vite';
 
+// Local-only admin panel (/admin + /api/*, filesystem writes). Its routes are
+// registered only under `astro dev`, so the deployed static site never
+// includes them.
+const localAdmin = {
+  name: 'local-admin',
+  hooks: {
+    'astro:config:setup': ({ command, injectRoute, updateConfig }) => {
+      if (command !== 'dev') return;
+      updateConfig({ output: 'server' });
+      injectRoute({ pattern: '/admin', entrypoint: './src/admin/admin.astro' });
+      injectRoute({ pattern: '/api/cities', entrypoint: './src/admin/api/cities.js' });
+      injectRoute({ pattern: '/api/geocode', entrypoint: './src/admin/api/geocode.js' });
+      injectRoute({ pattern: '/api/photos', entrypoint: './src/admin/api/photos.js' });
+    },
+  },
+};
+
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://example.com',
-  // SSR enabled so the /admin API endpoints (filesystem writes) work.
-  // NOTE: `astro dev` runs this as-is; for `astro build` you'd add an adapter
-  // (e.g. @astrojs/node). This admin tooling is intended for local use.
-  output: 'server',
-  integrations: [mdx(), sitemap()],
+  site: 'https://d0ng-grami.github.io',
+  output: 'static',
+  integrations: [mdx(), sitemap(), localAdmin],
 
   fonts: [
       {

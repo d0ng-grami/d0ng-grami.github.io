@@ -1,4 +1,4 @@
-// src/pages/api/cities.js — city list CRUD
+// src/admin/api/cities.js — city list CRUD
 import { readCities, writeCities, json } from '../../lib/cities-store.js';
 
 export const prerender = false;

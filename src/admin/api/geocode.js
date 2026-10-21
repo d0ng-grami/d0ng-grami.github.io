@@ -1,4 +1,4 @@
-// src/pages/api/geocode.js — Nominatim proxy (avoids CORS + sets User-Agent)
+// src/admin/api/geocode.js — Nominatim proxy (avoids CORS + sets User-Agent)
 import { json } from '../../lib/cities-store.js';
 
 export const prerender = false;

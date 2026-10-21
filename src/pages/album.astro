@@ -1,0 +1,773 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Header from '../components/Header.astro';
+import { SITE_TITLE } from '../consts';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title={`Album | ${SITE_TITLE}`} description="My photo album" />
+		<!-- is:inline keeps Astro from bundling/dropping this external CDN tag; it must
+		     load as a parser-blocking classic script so window.d3 exists before the
+		     deferred module script below runs. -->
+		<script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+	</head>
+	<body style="display:flex; flex-direction:column; height:100vh; overflow:hidden; margin:0;">
+		<Header />
+
+		<div id="content" style="flex:1; position:relative; overflow:hidden; background:#0d1117;">
+
+			<!-- World map (stage 1 + 2 via zoom) -->
+			<div id="world-stage" style="position:absolute; inset:0; z-index:10;">
+				<svg id="world-svg" style="display:block; width:100%; height:100%;"></svg>
+
+				<div id="city-tooltip" style="
+					display:none; position:absolute;
+					background:rgba(13,17,23,0.92); border:1px solid #30363d;
+					border-radius:8px; padding:8px 14px;
+					color:#e6edf3; font-size:14px;
+					pointer-events:none; white-space:nowrap; z-index:30;
+				"></div>
+
+			</div>
+
+			<!-- Album panel — right 40% overlay (stage 2: visible/empty · stage 3: with content) -->
+			<div id="album-panel" style="
+				position:absolute; top:0; right:0; width:40%; height:100%;
+				z-index:15; opacity:0; pointer-events:none;
+				transition:opacity 0.35s;
+				overflow:hidden;
+				border-left:1px solid rgba(255,255,255,0.07);
+				background:rgba(13,17,23,0.6);
+				backdrop-filter:blur(2px);
+			">
+				<button id="close-album-btn" style="
+					position:absolute; top:24px; right:24px;
+					background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+					border-radius:50%; color:#ffffff;
+					width:36px; height:36px; font-size:16px;
+					cursor:pointer; z-index:20;
+					display:flex; align-items:center; justify-content:center;
+					transition:background 0.2s;
+				">✕</button>
+
+				<!-- Year tabs (top of right panel) -->
+				<div id="album-years" style="
+					position:absolute; top:26px; left:32px;
+					display:flex; gap:20px; z-index:18;
+				"></div>
+
+				<div id="album-stage" style="position:absolute; inset:0;"></div>
+
+				<div id="album-info" style="
+					position:absolute; right:40px; top:50%;
+					transform:translateY(-50%);
+					z-index:5; min-width:150px;
+					pointer-events:none; user-select:none;
+				">
+					<div id="album-city-name" style="font-size:38px; color:#ffffff; font-weight:700; line-height:1.1; letter-spacing:-0.02em;"></div>
+					<div id="album-year"      style="font-size:13px; color:rgba(255,255,255,0.35); margin-top:10px; letter-spacing:0.06em;"></div>
+					<div id="album-count"     style="font-size:13px; color:rgba(255,255,255,0.35); margin-top:4px;"></div>
+				</div>
+			</div>
+
+		</div>
+
+		<!-- Fullscreen photo viewer overlay -->
+		<div id="photo-viewer" style="
+			display:none; position:fixed; inset:0; z-index:100;
+			background:rgba(0,0,0,0.92);
+			flex-direction:column; align-items:center; justify-content:center;
+		">
+			<button id="viewer-close" style="
+				position:absolute; top:24px; right:32px;
+				background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+				border-radius:50%; color:#ffffff; width:42px; height:42px; font-size:18px;
+				cursor:pointer; z-index:110;
+				display:flex; align-items:center; justify-content:center;
+				transition:background 0.2s;
+			">✕</button>
+
+			<button id="viewer-prev" style="
+				position:absolute; left:32px; top:50%; transform:translateY(-50%);
+				background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+				border-radius:50%; color:#ffffff; width:52px; height:52px; font-size:28px;
+				cursor:pointer; z-index:110;
+				display:flex; align-items:center; justify-content:center;
+				transition:background 0.2s;
+			">‹</button>
+
+			<button id="viewer-next" style="
+				position:absolute; right:32px; top:50%; transform:translateY(-50%);
+				background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+				border-radius:50%; color:#ffffff; width:52px; height:52px; font-size:28px;
+				cursor:pointer; z-index:110;
+				display:flex; align-items:center; justify-content:center;
+				transition:background 0.2s;
+			">›</button>
+
+			<!-- Horizontal coverflow strip: all photos laid out in a row, moved via translateX -->
+			<div id="viewer-stage" style="
+				position:absolute; inset:0; overflow:hidden;
+				pointer-events:none;
+			">
+				<div id="viewer-strip" style="position:absolute; inset:0;"></div>
+			</div>
+
+			<div id="viewer-track" style="
+				position:absolute; bottom:32px; left:50%; transform:translateX(-50%);
+				width:40%; height:6px; z-index:110; cursor:pointer;
+				background:rgba(255,255,255,0.2); border-radius:3px;
+			">
+				<div id="viewer-handle" style="
+					position:absolute; top:0; left:0; height:6px;
+					background:#ffffff; border-radius:3px;
+				"></div>
+			</div>
+		</div>
+
+		<script>
+			import * as topojson from 'topojson-client';
+			import { albumCities } from '../data/album-cities.js';
+
+			const d3 = (window as any).d3;
+
+			// ── Constants ──────────────────────────────────────────────────
+			const RADIUS  = 260;
+			const PHOTO_W = 200;
+			const PHOTO_H = 150;
+
+			// ── DOM elements ───────────────────────────────────────────────
+			const contentEl     = document.getElementById('content')!         as HTMLElement;
+			const worldStage    = document.getElementById('world-stage')!     as HTMLElement;
+			const cityTooltip   = document.getElementById('city-tooltip')!    as HTMLElement;
+			const albumPanel    = document.getElementById('album-panel')!     as HTMLElement;
+			const albumStageEl  = document.getElementById('album-stage')!     as HTMLElement;
+			const closeAlbumBtn = document.getElementById('close-album-btn')! as HTMLElement;
+			const albumInfo     = document.getElementById('album-info')!      as HTMLElement;
+			const cityNameEl    = document.getElementById('album-city-name')! as HTMLElement;
+			const yearEl        = document.getElementById('album-year')!      as HTMLElement;
+			const countEl       = document.getElementById('album-count')!     as HTMLElement;
+			const yearsEl       = document.getElementById('album-years')!     as HTMLElement;
+
+			// Fullscreen viewer elements
+			const photoViewer   = document.getElementById('photo-viewer')! as HTMLElement;
+			const viewerStrip   = document.getElementById('viewer-strip')!  as HTMLElement;
+			const viewerTrack   = document.getElementById('viewer-track')!  as HTMLElement;
+			const viewerHandle  = document.getElementById('viewer-handle')! as HTMLElement;
+			const viewerClose   = document.getElementById('viewer-close')! as HTMLElement;
+			const viewerPrev    = document.getElementById('viewer-prev')!  as HTMLElement;
+			const viewerNext    = document.getElementById('viewer-next')!  as HTMLElement;
+
+			// ── Map state ──────────────────────────────────────────────────
+			let allFeatures: any[]    = [];
+			let countriesToCities     = new Map<any, any[]>();
+			let clickableCountryIds   = new Set<any>();
+			let selectedFeature: any  = null;
+			let selectedCities: any[] = [];
+
+			let zoomScale = 1;
+			let zoomTx    = 0;
+			let zoomTy    = 0;
+
+			let svgSel: any;
+			let mapGroup: any;
+			let dotsGroup: any;
+			let worldProj: any;
+			let worldPath: any;
+			let svgW = 0;
+			let svgH = 0;
+
+			// ── Album arc state ────────────────────────────────────────────
+			type Photo = { src: string; full?: string };
+			let currentCity: any  = null;
+			let currentYearIndex  = 0;
+			let currentPhotos: Photo[] = [];
+			let photoCards: HTMLElement[]         = [];
+			let targetOffset  = 0;
+			let currentOffset = 0;
+			let minOffset     = -80;
+			let maxOffset     = 80;
+			let rafId: number | null = null;
+			let arcCenterX = 0;
+			let arcCenterY = 0;
+
+			// ── Fullscreen viewer state ────────────────────────────────────
+			let viewerPhotos: Photo[] = [];
+			let viewerIndex = 0;
+			let viewerDragging = false;
+
+			// ── Photo helper ───────────────────────────────────────────────
+			// Maps a local photo to its optimized webp variants (see scripts/optimize-photos.js):
+			//   src  → {name}.webp       (800px thumbnail, used by the arc)
+			//   full → {name}_full.webp  (2000px, used by the fullscreen viewer)
+			// External URLs (e.g. picsum placeholders) are passed through untouched.
+			function toWebpPhoto(photo: Photo): Photo {
+				if (!photo.src.startsWith('/photos/')) return photo;
+				return {
+					src:  photo.src.replace(/\.[^/.]+$/, '.webp'),
+					full: photo.src.replace(/\.[^/.]+$/, '_full.webp'),
+				};
+			}
+
+			// Returns the photos for a given year; falls back to 10 picsum placeholders.
+			function getYearPhotos(city: any, yearObj: any): Photo[] {
+				if (yearObj.photos && yearObj.photos.length > 0) return yearObj.photos.map(toWebpPhoto);
+				return Array.from({ length: 10 }, (_: unknown, i: number) => ({
+					src:  `https://picsum.photos/seed/${city.name}${yearObj.year}${i}/280/200`,
+					full: `https://picsum.photos/seed/${city.name}${yearObj.year}${i}/1280/900`,
+				}));
+			}
+
+			// Recompute scroll limits from photo count: arc spans 160°, offset clamps to ±span/2.
+			function updateOffsetLimits() {
+				const totalSpan = 160;
+				minOffset = -totalSpan / 2;
+				maxOffset =  totalSpan / 2;
+			}
+
+			// ── Arc rendering ──────────────────────────────────────────────
+			function renderArc() {
+				const n = currentPhotos.length;
+				photoCards.forEach((card, i) => {
+					const baseAngle = n > 1 ? -80 + (i / (n - 1)) * 160 : 0;
+					const angle     = baseAngle + currentOffset;
+					const rad       = (angle * Math.PI) / 180;
+					const x         = arcCenterX - RADIUS * Math.cos(rad);
+					const y         = arcCenterY + RADIUS * Math.sin(rad);
+					const depth     = Math.min(1, Math.abs(angle) / 80);
+					const scale     = 1 - depth * 0.4;
+					const opacity   = Math.abs(angle) > 90 ? 0 : Math.max(0, 1 - depth * 0.6);
+					card.style.transform = `translate(${x - PHOTO_W / 2}px, ${y - PHOTO_H / 2}px) scale(${scale})`;
+					card.style.opacity   = String(opacity);
+					card.style.zIndex    = String(Math.round((1 - depth) * 10));
+				});
+			}
+
+			function animationLoop() {
+				currentOffset += (targetOffset - currentOffset) * 0.1;
+				renderArc();
+				if (Math.abs(targetOffset - currentOffset) < 0.01) {
+					currentOffset = targetOffset;
+					renderArc();
+					rafId = null;
+				} else {
+					rafId = requestAnimationFrame(animationLoop);
+				}
+			}
+
+			// ── Stage 3: Show city album in right panel ────────────────────
+			// (panel is already visible in stage 2; this just fills the content)
+			function showCityAlbum(city: any) {
+				// Year tabs in ascending order ("YYYY.MM" → numeric via removing the dot)
+				city.years.sort((a: any, b: any) =>
+					Number(a.year.replace('.', '')) - Number(b.year.replace('.', '')));
+				currentCity      = city;
+				currentYearIndex = 0;
+				cityNameEl.textContent = city.name;
+				renderYearTabs(city);
+				selectYear(0);
+			}
+
+			// ── Year tabs ──────────────────────────────────────────────────
+			function renderYearTabs(city: any) {
+				yearsEl.innerHTML = '';
+				(city.years as any[]).forEach((y, i) => {
+					const btn = document.createElement('button');
+					btn.textContent = y.year;
+					btn.style.cssText = [
+						'background:none', 'border:none', 'cursor:pointer',
+						'font-size:15px', 'padding:4px 2px', 'letter-spacing:0.04em',
+						'border-bottom:2px solid transparent',
+						'transition:color 0.2s, border-color 0.2s',
+					].join(';');
+					btn.addEventListener('click', () => selectYear(i));
+					yearsEl.appendChild(btn);
+				});
+				updateYearTabStyles();
+			}
+
+			function updateYearTabStyles() {
+				Array.from(yearsEl.children).forEach((btn, i) => {
+					const el     = btn as HTMLElement;
+					const active = i === currentYearIndex;
+					el.style.color             = active ? '#ffffff' : 'rgba(255,255,255,0.35)';
+					el.style.borderBottomColor = active ? '#ffffff' : 'transparent';
+				});
+			}
+
+			// Switch to a year: swap arc photos and reset offset to 0.
+			function selectYear(index: number) {
+				currentYearIndex = index;
+				const yearObj    = currentCity.years[index];
+				currentPhotos    = getYearPhotos(currentCity, yearObj);
+				updateOffsetLimits();
+				targetOffset  = 0;
+				currentOffset = 0;
+				if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+
+				yearEl.textContent  = yearObj.year;
+				countEl.textContent = `${currentPhotos.length} photos`;
+				updateYearTabStyles();
+
+				buildPhotoCards();
+			}
+
+			// ── Build the arc photo cards for currentPhotos ────────────────
+			function buildPhotoCards() {
+				albumStageEl.innerHTML = '';
+				photoCards = currentPhotos.map((photo, i) => {
+					const card = document.createElement('div');
+					card.style.cssText = [
+						'position:absolute',
+						`width:${PHOTO_W}px`,
+						`height:${PHOTO_H}px`,
+						'will-change:transform,opacity',
+						'border-radius:10px',
+						'overflow:hidden',
+						'cursor:pointer',
+						'box-shadow:0 6px 24px rgba(0,0,0,0.6)',
+					].join(';');
+					const img     = document.createElement('img');
+					img.src       = photo.src;
+					img.width     = PHOTO_W;
+					img.height    = PHOTO_H;
+					img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+					img.loading   = 'lazy';
+					img.decoding  = 'async';
+					card.appendChild(img);
+					card.addEventListener('click', () => openViewer(i));
+					albumStageEl.appendChild(card);
+					return card;
+				});
+
+				arcCenterX = albumPanel.clientWidth - 40 - Math.max(albumInfo.offsetWidth, 150);
+				arcCenterY = albumPanel.clientHeight / 2;
+				renderArc();
+			}
+
+			// ── Fullscreen viewer (horizontal coverflow strip) ─────────────
+			function openViewer(index: number) {
+				viewerPhotos = currentPhotos;
+				viewerIndex  = index;
+				photoViewer.style.display = 'flex';   // visible first, so stage/track have width
+				buildViewerStrip();
+				updateViewer();
+			}
+
+			// Build all photos absolutely centered inside #viewer-strip (coverflow stack).
+			function buildViewerStrip() {
+				viewerStrip.innerHTML = '';
+				viewerPhotos.forEach((photo) => {
+					const img = document.createElement('img');
+					img.src = photo.full || photo.src;
+					img.loading  = 'lazy';
+					img.decoding = 'async';
+					img.style.cssText = [
+						'position:absolute', 'left:50%', 'top:50%',
+						'width:38vw', 'max-height:60vh', 'object-fit:contain',
+						'border-radius:8px', 'box-shadow:0 10px 50px rgba(0,0,0,0.7)',
+						'transition:transform 0.4s cubic-bezier(0.25,0.46,0.45,0.94), opacity 0.4s, scale 0.4s',
+						'will-change:transform,opacity',
+					].join(';');
+					viewerStrip.appendChild(img);
+				});
+			}
+
+			function updateViewer() {
+				// Each photo is offset from center by rel * 16vw (overlapping), scaled/faded by distance.
+				Array.from(viewerStrip.children).forEach((el, i) => {
+					const img  = el as HTMLElement;
+					const rel  = i - viewerIndex;
+					const dist = Math.abs(rel);
+					let scale: number, opacity: number;
+					if      (dist === 0) { scale = 1.00; opacity = 1.00; }
+					else if (dist === 1) { scale = 0.88; opacity = 0.75; }
+					else if (dist === 2) { scale = 0.76; opacity = 0.55; }
+					else if (dist === 3) { scale = 0.64; opacity = 0.38; }
+					else                 { scale = 0.52; opacity = 0.18; }
+					img.style.transform = `translate(-50%, -50%) translateX(${rel * 16}vw) scale(${scale})`;
+					img.style.opacity   = String(opacity);
+					img.style.zIndex     = String(Math.max(0, 10 - dist));
+				});
+				updateHandle();
+			}
+
+			// Size & position the scrubber handle from the current index.
+			function updateHandle() {
+				const n          = viewerPhotos.length;
+				const trackWidth = viewerTrack.clientWidth;
+				const handleW    = n > 0 ? trackWidth / n : trackWidth;
+				const left       = n > 1 ? (viewerIndex / (n - 1)) * (trackWidth - handleW) : 0;
+				viewerHandle.style.width = `${handleW}px`;
+				viewerHandle.style.left  = `${left}px`;
+			}
+
+			// Map a clientX on the track → photo index.
+			function indexFromClientX(clientX: number): number {
+				const n = viewerPhotos.length;
+				if (n <= 1) return 0;
+				const rect    = viewerTrack.getBoundingClientRect();
+				const handleW = rect.width / n;
+				const usable  = rect.width - handleW;
+				let ratio     = usable > 0 ? (clientX - rect.left - handleW / 2) / usable : 0;
+				ratio = Math.max(0, Math.min(1, ratio));
+				return Math.round(ratio * (n - 1));
+			}
+
+			// Jump to a specific photo index (clamped), updating everything.
+			function setViewerIndex(index: number) {
+				if (viewerPhotos.length === 0) return;
+				const clamped = Math.max(0, Math.min(viewerPhotos.length - 1, index));
+				if (clamped === viewerIndex) return;   // no-op → avoid drag flicker
+				viewerIndex = clamped;
+				updateViewer();
+			}
+
+			// Step ±1, clamped to [0, length-1] (no wrap past first/last)
+			function viewerStep(dir: number) {
+				setViewerIndex(viewerIndex + dir);
+			}
+
+			function closeViewer() {
+				photoViewer.style.display = 'none';
+			}
+
+			// ── Close album content (stage 3 → stage 2, panel stays visible) ──
+			function closeAlbum() {
+				if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+				targetOffset  = 0;
+				currentOffset = 0;
+				photoCards    = [];
+				currentCity   = null;
+				cityNameEl.textContent = '';
+				yearEl.textContent     = '';
+				countEl.textContent    = '';
+				yearsEl.innerHTML      = '';
+				albumStageEl.innerHTML = '';
+			}
+
+			// ── Hide album panel entirely (used when returning to world) ───
+			function hideAlbumPanel() {
+				closeAlbum();
+				albumPanel.style.opacity       = '0';
+				albumPanel.style.pointerEvents = 'none';
+			}
+
+			// ── Stage 2: City dots — positioned in screen coords (outside mapGroup) ──
+			function drawCityDots() {
+				dotsGroup.selectAll('*').remove();
+				dotsGroup.style('display', null);
+
+				dotsGroup.selectAll('circle')
+					.data(selectedCities)
+					.join('circle')
+					.attr('cx', (d: any) => zoomScale * worldProj([d.lon, d.lat])[0] + zoomTx)
+					.attr('cy', (d: any) => zoomScale * worldProj([d.lon, d.lat])[1] + zoomTy)
+					.attr('r', 7)
+					.attr('fill', '#f0b429')
+					.attr('stroke', '#ffffff')
+					.attr('stroke-width', 1.5)
+					.style('cursor', 'pointer')
+					.on('mouseover', function (event: any, d: any) {
+						d3.select(this).transition().duration(100)
+							.attr('r', 10).attr('fill', '#ffdd57');
+						cityTooltip.innerHTML =
+							`<strong style="color:#f0b429">${d.name}</strong>` +
+							`<br/><span style="color:#8b949e">${(d.years as any[]).map((y) => y.year).join(' · ')}</span>`;
+						cityTooltip.style.display = 'block';
+					})
+					.on('mousemove', (event: any) => {
+						const rect = worldStage.getBoundingClientRect();
+						cityTooltip.style.left = (event.clientX - rect.left + 12) + 'px';
+						cityTooltip.style.top  = (event.clientY - rect.top  - 10) + 'px';
+					})
+					.on('mouseout', function () {
+						d3.select(this).transition().duration(100)
+							.attr('r', 7).attr('fill', '#f0b429');
+						cityTooltip.style.display = 'none';
+					})
+					.on('click', function (event: any, d: any) {
+						event.stopPropagation();
+						cityTooltip.style.display = 'none';
+						// Stage 2 → Stage 3: fill right panel with city album
+						showCityAlbum(d);
+					});
+			}
+
+			// ── Country path styles ────────────────────────────────────────
+			function applyCountryStyles(feat: any) {
+				mapGroup.select('.countries').selectAll('path')
+					.transition().duration(300)
+					.attr('fill',         (d: any) => d.id === feat.id ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.03)')
+					.attr('stroke',       (d: any) => d.id === feat.id ? 'rgba(255,255,255,0.3)'  : 'rgba(255,255,255,0.06)')
+					.attr('stroke-width', (d: any) => d.id === feat.id ? 1.5 : 0.5);
+			}
+
+			function restoreCountryStyles() {
+				mapGroup.select('.countries').selectAll('path')
+					.attr('fill',         'rgba(255,255,255,0.12)')
+					.attr('stroke',       'rgba(255,255,255,0.25)')
+					.attr('stroke-width', 0.5);
+			}
+
+			// ── selectCountry: world → country zoom (called by both country click AND pushpin click) ──
+			function selectCountry(feat: any) {
+				selectedFeature = feat;
+				selectedCities  = countriesToCities.get(feat.id) || [];
+
+				// Fade out pushpins before zoom
+				mapGroup.select('#pin-layer')
+					.transition().duration(200).style('opacity', 0);
+
+				// Compute zoom transform to centre feat in left 60%
+				const [[x0, y0], [x1, y1]] = worldPath.bounds(feat);
+				const pad = 60;
+				const s   = Math.min(
+					(svgW * 0.6 - pad * 2) / (x1 - x0),
+					(svgH         - pad * 2) / (y1 - y0)
+				) * 0.85;
+				const tx  = svgW * 0.3 - s * (x0 + x1) / 2;
+				const ty  = svgH * 0.5 - s * (y0 + y1) / 2;
+
+				zoomScale = s;
+				zoomTx    = tx;
+				zoomTy    = ty;
+
+				mapGroup.transition()
+					.duration(600)
+					.ease(d3.easeCubicInOut)
+					.attr('transform', `translate(${tx},${ty}) scale(${s})`)
+					.on('end', () => {
+						// Apply country style changes
+						applyCountryStyles(feat);
+						// Reveal right panel (stage 2: visible but empty)
+						albumPanel.style.opacity       = '1';
+						albumPanel.style.pointerEvents = 'auto';
+						// Draw city dots on left map
+						drawCityDots();
+					});
+			}
+
+			// ── goBackToWorld: zoom out + reset everything ────────────────
+			function goBackToWorld() {
+				hideAlbumPanel();
+				cityTooltip.style.display = 'none';
+				dotsGroup.style('display', 'none').selectAll('*').remove();
+				restoreCountryStyles();
+
+				mapGroup.transition()
+					.duration(600)
+					.ease(d3.easeCubicInOut)
+					.attr('transform', 'translate(0,0) scale(1)')
+					.on('end', () => {
+						zoomScale = 1; zoomTx = 0; zoomTy = 0;
+						mapGroup.select('#pin-layer')
+							.style('opacity', 0)
+							.transition().duration(300).style('opacity', 1);
+					});
+			}
+
+			// ── Pushpin markers ────────────────────────────────────────────
+			function drawPushpins() {
+				const pinLayer = mapGroup.append('g').attr('id', 'pin-layer');
+
+				allFeatures.forEach((feat: any) => {
+					if (!clickableCountryIds.has(feat.id)) return;
+
+					const centroid  = d3.geoCentroid(feat);
+					const projected = worldProj(centroid);
+					if (!projected || isNaN(projected[0])) return;
+					const [cx, cy] = projected;
+
+					const pin = pinLayer.append('g')
+						.attr('class', 'pushpin')
+						.attr('id', `pin-${feat.id}`)
+						.attr('transform', `translate(${cx},${cy})`)
+						.attr('data-cx', cx)
+						.attr('data-cy', cy)
+						// Pass all mouse events through to country path below
+						.style('pointer-events', 'none')
+						.datum(feat);
+
+					// Pin body (behind head)
+					pin.append('line')
+						.attr('x1', 0).attr('y1', 8)
+						.attr('x2', 0).attr('y2', 22)
+						.attr('stroke', 'rgba(255,255,255,0.6)')
+						.attr('stroke-width', 1)
+						.attr('stroke-linecap', 'round');
+
+					// Pin head
+					pin.append('circle')
+						.attr('r', 8)
+						.attr('fill', '#e8453c')
+						.attr('stroke', 'white')
+						.attr('stroke-width', 1.5);
+				});
+			}
+
+			// ── Init world map ─────────────────────────────────────────────
+			function initWorldMap() {
+				svgW = contentEl.clientWidth;
+				svgH = contentEl.clientHeight;
+
+				svgSel = d3.select('#world-svg');
+				svgSel.attr('viewBox', `0 0 ${svgW} ${svgH}`)
+				      .attr('width', svgW).attr('height', svgH);
+				svgSel.selectAll('*').remove();
+
+				svgSel.append('rect')
+				      .attr('width', svgW).attr('height', svgH)
+				      .attr('fill', '#0d1117');
+
+				mapGroup  = svgSel.append('g').attr('id', 'map-group');
+				dotsGroup = svgSel.append('g').attr('id', 'dots-group').style('display', 'none');
+
+				worldProj = d3.geoNaturalEarth1()
+					.scale(svgW / 6.3)
+					.translate([svgW / 2, svgH / 2]);
+				worldPath = d3.geoPath().projection(worldProj);
+
+				d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
+					.then((world: any) => {
+						allFeatures = (topojson.feature(world, world.objects.countries) as any).features;
+
+						// Map each albumCity → containing country feature
+						(albumCities as any[]).forEach((city) => {
+							allFeatures.forEach((feat: any) => {
+								if (d3.geoContains(feat, [city.lon, city.lat])) {
+									if (!countriesToCities.has(feat.id)) countriesToCities.set(feat.id, []);
+									countriesToCities.get(feat.id)!.push(city);
+								}
+							});
+						});
+
+						// Clickable = any country with album data (picsum fills missing photos)
+						countriesToCities.forEach((cities, id) => {
+							if (cities.length > 0)
+								clickableCountryIds.add(id);
+						});
+
+						// Graticule
+						mapGroup.append('path')
+							.datum(d3.geoGraticule()())
+							.attr('d', worldPath)
+							.attr('fill', 'none')
+							.attr('stroke', '#161b22')
+							.attr('stroke-width', 0.4);
+
+						// Countries
+						mapGroup.append('g').attr('class', 'countries')
+							.selectAll('path').data(allFeatures).join('path')
+							.attr('d', worldPath)
+							.attr('fill',         'rgba(255,255,255,0.12)')
+							.attr('stroke',       'rgba(255,255,255,0.25)')
+							.attr('stroke-width', 0.5)
+							.style('cursor', (d: any) => clickableCountryIds.has(d.id) ? 'pointer' : 'default')
+							.on('mouseover', function (event: any, d: any) {
+								if (!clickableCountryIds.has(d.id)) return;
+								const c = worldPath.centroid(d);
+								if (isNaN(c[0]) || isNaN(c[1])) return;
+								d3.select(this).raise().transition().duration(150)
+									.attr('fill',   'rgba(255,255,255,0.28)')
+									.attr('stroke', 'rgba(255,255,255,0.5)')
+									.attr('transform', `translate(${c[0]},${c[1]}) scale(1.1) translate(${-c[0]},${-c[1]})`);
+								// Scale up this country's pushpin together
+								const pin = mapGroup.select(`#pin-${d.id}`);
+								if (!pin.empty()) {
+									const px = +pin.attr('data-cx');
+									const py = +pin.attr('data-cy');
+									pin.transition().duration(150)
+										.attr('transform', `translate(${px},${py}) scale(1.2)`);
+								}
+							})
+							.on('mouseout', function (event: any, d: any) {
+								if (!clickableCountryIds.has(d.id)) return;
+								d3.select(this).transition().duration(200)
+									.attr('fill',   'rgba(255,255,255,0.12)')
+									.attr('stroke', 'rgba(255,255,255,0.25)')
+									.attr('transform', '');
+								// Restore pushpin
+								const pin = mapGroup.select(`#pin-${d.id}`);
+								if (!pin.empty()) {
+									const px = +pin.attr('data-cx');
+									const py = +pin.attr('data-cy');
+									pin.transition().duration(200)
+										.attr('transform', `translate(${px},${py})`);
+								}
+							})
+							.on('click', function (event: any, d: any) {
+								if (!clickableCountryIds.has(d.id)) return;
+								selectCountry(d);
+							});
+
+						// Sphere
+						mapGroup.append('path')
+							.datum({ type: 'Sphere' })
+							.attr('d', worldPath)
+							.attr('fill', 'none')
+							.attr('stroke', 'rgba(255,255,255,0.2)')
+							.attr('stroke-width', 1);
+
+						// Pushpins — rendered on top of countries
+						drawPushpins();
+					});
+
+				window.addEventListener('resize', () => {
+					svgSel.selectAll('*').remove();
+					countriesToCities.clear();
+					clickableCountryIds.clear();
+					initWorldMap();
+				}, { once: true });
+			}
+
+			// ── Event bindings ─────────────────────────────────────────────
+			// ✕ button (stage 2: country zoom + arc album): return to the world map
+			closeAlbumBtn.addEventListener('click', goBackToWorld);
+
+			albumPanel.addEventListener('wheel', (e: WheelEvent) => {
+				e.preventDefault();
+				targetOffset += e.deltaY * 0.15;
+				// Clamp to arc scroll limits (±span/2)
+				targetOffset = Math.max(minOffset, Math.min(maxOffset, targetOffset));
+				if (!rafId) rafId = requestAnimationFrame(animationLoop);
+			}, { passive: false });
+
+			// ── Fullscreen viewer bindings ─────────────────────────────────
+			// ✕ closes the viewer AND returns to the world map (same as old "← 세계지도")
+			viewerClose.addEventListener('click', () => { closeViewer(); goBackToWorld(); });
+			viewerPrev.addEventListener('click', () => viewerStep(-1));
+			viewerNext.addEventListener('click', () => viewerStep(1));
+			// Scrubber: click/drag the track to move; document-level move/up for smooth drag
+			viewerTrack.addEventListener('mousedown', (e: MouseEvent) => {
+				viewerDragging = true;
+				setViewerIndex(indexFromClientX(e.clientX));
+				e.preventDefault();
+			});
+			document.addEventListener('mousemove', (e: MouseEvent) => {
+				if (viewerDragging) setViewerIndex(indexFromClientX(e.clientX));
+			});
+			document.addEventListener('mouseup', (e: MouseEvent) => {
+				// If we were dragging, swallow the trailing event so it can't bubble
+				// to the overlay (prevents background-close after a drag).
+				if (viewerDragging) { viewerDragging = false; e.stopPropagation(); }
+			});
+			// Background click no longer closes the viewer — only the ✕ button does.
+			// Keyboard arrows move; Escape closes — only while viewer is open
+			document.addEventListener('keydown', (e: KeyboardEvent) => {
+				if (photoViewer.style.display !== 'flex') return;
+				if      (e.key === 'ArrowLeft')  viewerStep(-1);
+				else if (e.key === 'ArrowRight') viewerStep(1);
+				else if (e.key === 'Escape')     closeViewer();
+			});
+
+			if (document.readyState === 'loading') {
+				document.addEventListener('DOMContentLoaded', initWorldMap);
+			} else {
+				initWorldMap();
+			}
+		</script>
+	</body>
+</html>

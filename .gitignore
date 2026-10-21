@@ -1,0 +1,34 @@
+# build output
+dist/
+# generated types
+.astro/
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# original photos (kept locally; the site only serves the optimized .webp)
+public/photos/**/*_full.jpg
+public/photos/**/*_full.JPG
+public/photos/**/*_full.jpeg
+public/photos/**/*_full.png
+
+# environment variables
+.env
+.env.*
+
+# macOS-specific files
+.DS_Store
+
+# jetbrains setting folder
+.idea/
+
+# local-only files
+.claude/settings.local.json
+check_result.txt

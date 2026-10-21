@@ -1,0 +1,103 @@
+---
+import { SITE_TITLE } from '../consts';
+import HeaderLink from './HeaderLink.astro';
+
+// 여기 두 URL만 본인 계정으로 바꾸면 됩니다.
+const INSTAGRAM_URL = 'https://www.instagram.com/d0ng_grami';
+const LINKEDIN_URL = 'https://www.linkedin.com/in/dwlee0906';
+---
+
+<header>
+	<nav>
+		<h2><a href="/">{SITE_TITLE}</a></h2>
+		<div class="internal-links">
+			<HeaderLink href="/">Home</HeaderLink>
+			<HeaderLink href="/cv">CV</HeaderLink>
+			<HeaderLink href="/album">Album</HeaderLink>
+			<HeaderLink href="/projects">Projects</HeaderLink>
+		</div>
+		<div class="social-links">
+			<a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer">
+				<span class="sr-only">Instagram</span>
+				<svg
+					viewBox="0 0 24 24"
+					aria-hidden="true"
+					width="34"
+					height="34"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+					<path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+					<line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+				</svg>
+			</a>
+			<a href={LINKEDIN_URL} target="_blank" rel="noopener noreferrer">
+				<span class="sr-only">LinkedIn</span>	
+				<svg
+					viewBox="0 0 24 24"
+					aria-hidden="true"
+					width="34"
+					height="34"
+					fill="currentColor"
+				>
+					<path
+						d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-1.337-.027-3.057-1.864-3.057-1.865 0-2.151 1.456-2.151 2.96v5.701h-3v-11h2.879v1.504h.041c.401-.759 1.379-1.559 2.839-1.559 3.038 0 3.6 2 3.6 4.59v6.465z"
+					></path>
+				</svg>
+			</a>
+		</div>
+	</nav>
+</header>
+<style>
+	header {
+		margin: 0;
+		padding: 0 1em;
+		background: #111111;
+		box-shadow: 0 2px 8px rgba(var(--black), 5%);
+	}
+	h2 {
+		margin: 0;
+		font-size: 1em;
+	}
+
+	h2 a,
+	h2 a.active {
+		text-decoration: none;
+		color: #ffffff;
+	}
+	nav {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		align-items: center;
+	}
+	.internal-links {
+		justify-self: center;
+	}
+	.social-links {
+		justify-self: end;
+	}
+	nav a {
+		padding: 1em 0.5em;
+		color: #ffffff;
+		border-bottom: 4px solid transparent;
+		text-decoration: none;
+	}
+	nav a.active {
+		text-decoration: none;
+		border-bottom-color: var(--accent);
+	}
+	.social-links,
+	.social-links a {
+		display: flex;
+		align-items: center;
+	}
+	@media (max-width: 720px) {
+		.social-links {
+			display: none;
+		}
+	}
+</style>

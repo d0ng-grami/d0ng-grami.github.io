@@ -1,0 +1,105 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+
+const NAME = 'DongWoo Lee (이동우)';
+const TAGLINE = 'RESEARCHER · ENGINEER';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+	</head>
+	<body>
+		<Header />
+		<main class="landing">
+			<div class="bio">
+				<h1 class="name">{NAME}</h1>
+				<p class="tagline">{TAGLINE}</p>
+
+				<div class="intro">
+					<p>
+						DongWoo Lee is a researcher and engineer working on MEMS-based
+						sensors. He grew up and completed his schooling in South Korea before
+						moving to Japan as a Korea–Japan Joint Government Scholarship student
+						(18th cohort) in the sciences and engineering. He studied Mechanical
+						Engineering at the Tokyo Institute of Technology (now Institute of Science, Tokyo), graduating early in
+						three and a half years, with a leave of absence for 2 years during his mandatory
+						military service in the Republic of Korea Army.
+					</p>
+					<p>
+						He then moved to The University of Tokyo for graduate study, where he
+						joined the Takeuchi–Nie Laboratory under Prof. Shoji Takeuchi and
+						continued into his M.S. and Ph.D. His work centers on microfabrication and
+						thin-film processing to build miniaturized sensors that turn physical signals into clean,
+						measurable readouts. He is broadly interested in MEMS, sensing, and the craft of designing and fabricating 
+						the small devices that make measurement possible.
+					</p>
+				</div>
+			</div>
+		</main>
+		<Footer />
+
+		<style>
+			.landing {
+				width: 1200px;
+				max-width: calc(100% - 4em);
+				margin: 0 auto;
+				min-height: calc(100vh - 200px);
+				display: flex;
+				align-items: center;
+				justify-content: flex-start;
+				padding: 4rem 0 6rem;
+			}
+
+			.bio {
+				width: 100%;
+			}
+
+			.name {
+				color: #ffffff;
+				font-size: clamp(2.2rem, 6vw, 3.4rem);
+				font-weight: 300;
+				line-height: 1.5;
+				margin: 0;
+				text-align: center;
+			}
+
+			.tagline {
+				color: #999999;
+				font-size: 0.85rem;
+				font-weight: 500;
+				text-transform: uppercase;
+				letter-spacing: 0.22em;
+				margin: 0.9rem 0 0;
+				text-align: left;
+			}
+
+			.intro {
+				margin-top: 2.4rem;
+				text-align: left;
+			}
+			.intro p {
+				color: #ffffff;
+				font-size: 1rem;
+				line-height: 1.7;
+				margin: 0 0 1.2rem 0;
+			}
+			.intro p:last-child {
+				margin-bottom: 0;
+			}
+
+			@media (max-width: 640px) {
+				.landing {
+					padding: 2.5rem 1.25rem 4rem;
+				}
+				.tagline {
+					letter-spacing: 0.16em;
+				}
+			}
+		</style>
+	</body>
+</html>

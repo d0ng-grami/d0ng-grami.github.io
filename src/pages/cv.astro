@@ -1,0 +1,336 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import { SITE_TITLE } from '../consts';
+import {
+	profile,
+	summary,
+	education,
+	research,
+	skills,
+	publications,
+	honors,
+	additional,
+} from '../data/cv';
+
+// 파일 최상단 프론트매터(--- 영역)에 아래 변수와 함수를 추가합니다.
+
+// 본인 이름의 다양한 표기법 등록
+const MY_NAMES = ['DongWoo Lee', 'LEE DONG WOO', 'Lee D.'];
+
+// authors 문자열에서 내 이름만 <b>로 감싸주는 헬퍼 함수
+function highlightAuthor(authorsString: string) {
+    let result = authorsString;
+    MY_NAMES.forEach((name) => {
+        result = result.replace(name, `<b style="color: #ffffff;">${name}</b>`);
+    });
+    return result;
+}
+
+// Fixed display order for the publication sub-sections.
+const PUB_GROUP_ORDER = [
+	'International Journal Publications',
+	'International Conference Presentations',
+	'Domestic Conference Presentations',
+	'Patent',
+] as const;
+
+const publicationGroups = PUB_GROUP_ORDER.map((group) => ({
+	group,
+	items: publications.filter((p) => p.group === group),
+})).filter((g) => g.items.length > 0);
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title={`CV | ${SITE_TITLE}`} description="My curriculum vitae" />
+	</head>
+	<body>
+		<Header />
+		<main class="cv">
+			<div class="cv-head">
+				<div class="cv-photo">
+					<!-- Replace public/profile.jpg with your own photo. -->
+					<img src="/profile.jpg" alt={profile.name} />
+				</div>
+				<div class="cv-info">
+					<h1>{profile.name}</h1>
+					<p class="subtitle">{profile.title}</p>
+					<p class="contact">{profile.email} · {profile.location}</p>
+				</div>
+			</div>
+
+			<!-- 1. Summary -->
+			<section class="cv-section">
+				<h2>Summary</h2>
+				<p>{summary}</p>
+			</section>
+
+			<!-- 2. Education -->
+			<section class="cv-section">
+				<h2>Education</h2>
+				{
+					education.map((e) => (
+						<div class="entry">
+							<div class="entry-head">
+								<span class="entry-title">{e.school}</span>
+								<span class="entry-period">{e.period}</span>
+							</div>
+							<p class="entry-sub">{e.degree}</p>
+							{e.advisor && <p class="entry-meta">Advisor: {e.advisor}</p>}
+							{e.note && <p class="entry-meta">{e.note}</p>}
+						</div>
+					))
+				}
+			</section>
+
+			<!-- 3. Research Experience -->
+			<section class="cv-section">
+				<h2>Research Experience</h2>
+				{
+					research.map((r) => (
+						<div class="entry">
+							<div class="entry-head">
+								<span class="entry-title">{r.organization}</span>
+								<span class="entry-period">{r.period}</span>
+							</div>
+							<p class="entry-sub">{r.role}</p>
+							<ul>
+								{r.details.map((d) => (
+									<li set:html={d}></li>
+								))}
+							</ul>
+						</div>
+					))
+				}
+			</section>
+
+			<!-- 4. Technical Skills -->
+			<section class="cv-section">
+				<h2>Technical Skills</h2>
+				{
+					skills.map((s) => (
+						<p class="skill-row">
+							<span class="skill-cat">{s.category}:</span> {s.items.join(', ')}
+						</p>
+					))
+				}
+			</section>
+
+			<!-- 5. Publications & Patent (grouped) HTML 부분 -->
+            {
+                publicationGroups.map((g) => (
+                    <section class="cv-section">
+                        <h2>{g.group}</h2>
+                        <ul class="pub-list">
+                            {g.items.map((p) => (
+                                <li class="pub-item">
+                                    <span set:html={highlightAuthor(p.authors)}></span>, 
+                                    <em>“{p.title},”</em> {p.venue}. 
+                                    {p.note && <span class="pub-note">{p.note}</span>}
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                ))
+            }
+
+			<!-- 6. Honors & Scholarships -->
+			<section class="cv-section">
+				<h2>Honors &amp; Scholarships</h2>
+				{
+					honors.map((h) => (
+						<div class="entry-head">
+							<span class="entry-title">
+								{h.title} <span class="entry-meta">— {h.issuer}</span>
+							</span>
+							<span class="entry-period">{h.year}</span>
+						</div>
+					))
+				}
+			</section>
+
+			<!-- 7. Additional Experience -->
+			<section class="cv-section">
+				<h2>Additional Experience</h2>
+				{
+					additional.map((a) => (
+						<div class="entry">
+							<div class="entry-head">
+								<span class="entry-title">
+									{a.organization}
+									{a.organizationDetail && (
+										<span class="entry-title-detail">, <span set:html={a.organizationDetail}></span></span>
+									)}
+								</span>
+								<span class="entry-period">{a.period}</span>
+							</div>
+							<p class="entry-sub-plain">{a.role}</p>
+							{a.detail && <p class="entry-meta">{a.detail}</p>}
+						</div>
+					))
+				}
+			</section>
+		</main>
+		<Footer />
+
+		<style>
+			.entry-title-detail { font-weight: 400; color: #cccccc; }
+			.entry-sub-plain { color: #dddddd; margin: 0 0 0.2rem 0; font-style: normal; }
+			.cv {
+				color: #ffffff;
+				width: 1200px;
+				max-width: calc(100% - 4em);
+				font-size: 13px;
+			}
+
+			/* Header: photo (left) + info (right), button pinned top-right. */
+			.cv-head {
+				display: flex;
+				align-items: center;
+				gap: 1.8em;
+				margin-bottom: 2.8em;
+			}
+			.cv-photo {
+				width: 140px;
+				height: 140px;
+				border-radius: 50%;
+				border: 2px solid #2a2a2a;
+				background: #ffffff; /* 👈 증명사진 배경색(흰색)과 똑같이 맞춰서 빈 공간을 숨깁니다! */
+				overflow: hidden;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				flex-shrink: 0;
+			}
+
+			/* 2. 실제 증명사진 (프레임 안에서 크기만 조절) */
+			.cv-photo img {
+				width: 100%;
+				height: 100%;
+				object-fit: cover;
+				object-position: center 10%; /* 얼굴 높이 조절 */
+				transform: scale(0.9); /* 👈 여기서 얼굴 크기를 조절하세요! (0.8, 0.85, 0.9 등) */
+				display: block;
+			}
+			.cv-info {
+				flex: 1 1 auto;
+				min-width: 0;
+			}
+			.cv h1 {
+				color: #ffffff;
+				font-size: 25px;
+				margin-bottom: 0.25rem;
+			}
+			.subtitle {
+				color: #cccccc;
+				font-style: italic;
+				font-size: 14px;
+				margin: 0 0 0.2rem 0;
+			}
+			.contact {
+				color: #888888;
+				font-size: 12px;
+				margin: 0;
+			}
+
+			/* Stack photo over text on narrow screens. */
+			@media (max-width: 640px) {
+				.cv-head {
+					flex-wrap: wrap;
+					text-align: center;
+					justify-content: center;
+				}
+				.cv-photo {
+					flex-basis: 100%;
+					display: flex;
+					justify-content: center;
+				}
+				.cv-info {
+					flex-basis: 100%;
+				}
+			}
+
+			.cv-section {
+				margin-bottom: 2.5em;
+			}
+			.cv-section h2 {
+				color: #ffffff;
+				font-size: 17px;
+				margin: 0 0 0.8rem 0;
+				padding: 0.3em 0.6em;
+				background: #1d1d1d;
+				border-left: 4px solid var(--accent);
+				border-radius: 3px;
+			}
+			.cv-section p {
+				color: #dddddd;
+				font-size: 13px;
+			}
+
+			.entry {
+				margin-bottom: 1.4em;
+			}
+			.entry-head {
+				display: flex;
+				justify-content: space-between;
+				align-items: baseline;
+				gap: 1em;
+				margin-bottom: 0.1rem;
+			}
+			.entry-title {
+				color: #ffffff;
+				font-weight: 700;
+			}
+			.entry-period {
+				color: #888888;
+				font-size: 0.85em;
+				white-space: nowrap;
+			}
+			.entry-sub {
+				color: #bbbbbb;
+				font-style: italic;
+				margin: 0 0 0.2rem 0;
+			}
+			.entry-meta {
+				color: #999999;
+				font-size: 0.85em;
+				margin: 0;
+			}
+			.entry ul {
+				margin: 0.3rem 0 0 0;
+				padding-left: 1.2em;
+			}
+			.entry li {
+				color: #dddddd;
+				font-size: 0.95em;
+				margin-bottom: 0.2em;
+			}
+
+			.skill-row {
+				margin: 0 0 0.4rem 0;
+			}
+			.skill-cat {
+				color: #ffffff;
+				font-weight: 700;
+			}
+
+			/* Publication / patent citation lists. */
+			.pub-list {
+				list-style: none;
+				margin: 0;
+				padding: 0;
+			}
+			.pub-item {
+				color: #dddddd;
+				font-size: 13px;
+				line-height: 1.55;
+				margin-bottom: 0.6em;
+				padding-left: 1.2em;
+				text-indent: -1.2em; /* hanging indent for wrapped lines */
+			}
+		</style>
+	</body>
+</html>
